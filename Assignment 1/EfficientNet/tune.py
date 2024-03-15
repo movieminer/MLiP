@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import OneCycleLR
 from torch.optim import AdamW
-from sklearn.model_selection import train_test_split, KFold, GroupKFold
+from sklearn.model_selection import GroupShuffleSplit, KFold, GroupKFold
 import tempfile
 
 from albumentations.pytorch import ToTensorV2
@@ -490,9 +490,14 @@ def train_loop(cfg):
     kaggle_spectrograms = np.load(paths.DATASET + 'kaggle_specs.npy', allow_pickle=True).item()
     eeg_spectrograms = np.load(paths.DATASET + 'eeg_specs.npy', allow_pickle=True).item()
 
-    train_folds, valid_folds = train_test_split(train_df, test_size=0.2, random_state=42)
-    train_dataset = EEGDataset(train_folds, kaggle_spectrograms=kaggle_spectrograms, eeg_spectrograms=eeg_spectrograms, mode="train", augment=cfg['augment'])
-    valid_dataset = EEGDataset(valid_folds, kaggle_spectrograms=kaggle_spectrograms, eeg_spectrograms=eeg_spectrograms, mode="train", augment='none')
+    gss = GroupShuffleSplit(n_splits=1, test_size=config.VAL_SIZE, random_state=config.SEED)
+    train_index, valid_index = next(gss.split(df, df.target, groups=df['patient_id']))
+    
+    train_entries = df.iloc[train_index].reset_index(drop=True)
+    valid_entries = df.iloc[valid_index].reset_index(drop=True)
+    
+    train_dataset = EEGDataset(train_entries, kaggle_spectrograms=kaggle_spectrograms, eeg_spectrograms=eeg_spectrograms, mode="train", augment="both")
+    valid_dataset = EEGDataset(valid_entries, kaggle_spectrograms=kaggle_spectrograms, eeg_spectrograms=eeg_spectrograms, mode="train", augment="none")
     
     train_loader = DataLoader(train_dataset,
                               batch_size=cfg['batch_size'],
